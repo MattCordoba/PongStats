@@ -1,5 +1,7 @@
 __author__ = 'Matt Cordoba'
 from enum import Enum
+import MySQLdb
+
 P1_HIT = 1
 P1_MISS = 2
 P2_HIT = 3
@@ -17,6 +19,8 @@ class Player():
         self.redemptionsHit = 0
         self.redemptionsRequired = 0
         self.redemptionPressureHit = 0
+        self.lastCupShots = 0
+        self.lastCupHits = 0
         self.shotsTaken = 0
         self.shotsHit = 0
         if prevGameStats is not None:
@@ -43,6 +47,10 @@ class Player():
         return self.name
     def getCupsRemaining(self):
         return self.cupsRemaining
+    def getLastCupsHit(self):
+        if(self.lastCupShots == 0):
+            return None
+        return self.lastCupHits * 100.0 / self.lastCupShots
     def takePlayerTurn(self,p2):
         gameOver = False
         onRedemption = False
@@ -55,6 +63,8 @@ class Player():
         #add to player shot status
         self.shotsTaken += 2
         self.turnsTaken += 1
+        if(p2.cupsRemaining == 1):
+            self.lastCupShots += 2
         reShot = False
         cupsThisTurn = 0
         if('i' in command): #handle different island scenarios
@@ -89,13 +99,19 @@ class Player():
                 cupsThisTurn = 2
                 self.shotsHit += 2
                 reShot = True
+            if(p2.cupsRemaining == 1):
+                self.lastCupHits += 2
         elif command == '11':
             cupsThisTurn = 2
             self.shotsHit += 2
             reShot = True
+            if(p2.cupsRemaining == 1):
+                self.lastCupHits += 2
         elif command == '10' or command == '01':
             cupsThisTurn = 1
             self.shotsHit += 1
+            if(p2.cupsRemaining == 1):
+                self.lastCupHits += 1
 
         if not onRedemption:
             redemptionsRequired = p2.handleLossCups(cupsThisTurn)
@@ -137,6 +153,7 @@ class Player():
         d['NAME'] = self.getName()
         d['CUPS_REMAINING'] = self.getCupsRemaining()
         d['EXPLOSIONS_PER_TURN'] = self.getExplosionsPerTurn()
+        d['LAST_CUP_HITS'] = self.getLastCupsHit()
         d['SHOT_PERCENTAGE'] = self.getShotPercentage()
         d['REDEMPTIONS_REQUIRED'] = self.getRedemptionsRequired()
         d['REDEMPTIONS_HIT'] = self.getRedemptionsHit()
@@ -152,10 +169,56 @@ class Player():
         if(self.shotsTaken  == 0):
             return None
         return self.shotsHit * 100.0 / self.shotsTaken
-class Game():
+class Database():
     def __init__(self):
-        self.p1 = Player(PlayerType.p1,'P1')
-        self.p2 = Player(PlayerType.p2,'P2')
+        pass
+    def _connect(self):
+        self.db = MySQLdb.connect(host="pongstatsdb2.clvjtmowubkf.us-west-2.rds.amazonaws.com",    # your host, usually localhost
+                     user="",         # your username
+                     passwd="",  # your password
+                     db="pongstatsdb2")        # name of the data base
+
+        # you must create a Cursor object. It will let
+        #  you execute all the queries you need
+        self.cur = self.db.cursor()
+        pass
+    def _disconnect(self):
+        pass
+    def startSet(self,player1Key,player1Name,player2Key,player2Name):
+        pass
+    def startGame(self):
+        pass
+    def upsertPlayer(self,playerName,pNumber):
+        playerName = playerName.split(" ")
+        args = (playerName[0],playerName[1])
+        query = "SELECT id FROM pongstatsdb2.spot_fm_player WHERE firstName = '%s' and lastName = '%s';"
+        self.cur.execute(query,args)
+        rows = self.cur.fetchall()
+        if(len(rows) == 0):
+            #insert new player
+            query = "INSERT INTO pongstatsdb2.spot_fm_player (firstName, lastName) VALUES ('%s', '%s');"
+            self.cur.execute(query,args)
+            playerId = self.cur.lastrowid
+            self.db.commit()
+        else:
+            #get player id
+            playerId = rows[0][0]
+        if(pNumber == 1):
+            self.player1ID = playerId
+        elif(pNumber == 2):
+            self.player2ID = playerId
+        else:
+            raise AttributeError
+    def updateGameStats(self,stats):
+        pass
+    def updateSetStats(self,stats):
+        pass
+    def endSet(self):
+        pass
+class Game():
+    def __init__(self,player1Name,player2Name):
+        self.p1 = Player(PlayerType.p1,player1Name)
+        self.p2 = Player(PlayerType.p2,player2Name)
     def _waitForPlayerStart(self):
         startPlayerChosen = False
         command = None
@@ -200,5 +263,7 @@ class Game():
         print('final stats:')
         print(self.p1.getStatus())
         print(self.p2.getStatus())
-g = Game()
+player1Name = 'Matt Cordoba'
+player2Name = 'Ben Mattison'
+g = Game(player1Name,player2Name)
 g.playGame()
